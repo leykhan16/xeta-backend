@@ -10,7 +10,6 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
-use tower_http::services::ServeDir;
 use chrono::{Utc, Duration};
 
 // ───────────────────────────────────────────────
@@ -58,7 +57,6 @@ async fn main() {
         .route("/push-token", post(save_push_token))
         .route("/media/upload", post(upload_image))
         
-        .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
