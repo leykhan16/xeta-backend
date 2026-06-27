@@ -817,7 +817,7 @@ struct ConversationWithUser {
 // ───────────────────────────────────────────────
 
 const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024; // 10 MB
-const ALLOWED_MIME_TYPES: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/webp"];
+const ALLOWED_MIME_TYPES: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/webp", "audio/m4a", "audio/mp4", "audio/aac", "audio/mpeg", "audio/x-m4a"];
 
 #[derive(Serialize)]
 struct UploadResponse {
