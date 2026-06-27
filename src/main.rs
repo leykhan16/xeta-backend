@@ -55,6 +55,7 @@ async fn main() {
         .route("/users/:username/key", get(get_public_key)).route("/messages", post(send_message))
 .route("/messages/:conversation_id", get(get_messages))
 .route("/conversations", get(get_conversations))
+        .route("/push-token", post(save_push_token))
         .route("/media/upload", post(upload_image))
         
         .nest_service("/uploads", ServeDir::new("uploads"))
@@ -695,6 +696,35 @@ async fn send_message(
         Json(ErrorResponse { error: e.to_string() }),
     ))?;
 
+    // Send push notification to recipient
+    let recipient_token: Option<String> = sqlx::query_scalar(
+        "SELECT push_token FROM users WHERE id = $1"
+    )
+    .bind(body.recipient_id)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or(None)
+    .flatten();
+
+    if let Some(token) = recipient_token {
+        let sender_username = sqlx::query_scalar::<_, String>(
+            "SELECT username FROM users WHERE id = $1"
+        )
+        .bind(auth.id)
+        .fetch_optional(&state.db)
+        .await
+        .unwrap_or(None)
+        .unwrap_or_else(|| "Someone".to_string());
+
+        tokio::spawn(async move {
+            send_push_notification(
+                &token,
+                &format!("New message from @{}", sender_username),
+                "You have a new encrypted message",
+            ).await;
+        });
+    }
+
     Ok((StatusCode::CREATED, Json(message)))
 }
 
@@ -859,4 +889,49 @@ async fn upload_image(
     }
 
     Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: String::from("No file field in request") })))
+}
+
+// ───────────────────────────────────────────────
+// Push notifications
+// ───────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct PushTokenRequest {
+    token: String,
+}
+
+async fn save_push_token(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<PushTokenRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    sqlx::query("UPDATE users SET push_token = $1 WHERE id = $2")
+        .bind(&body.token)
+        .bind(auth.id)
+        .execute(&state.db)
+        .await
+        .map_err(|e| (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e.to_string() }),
+        ))?;
+
+    Ok(StatusCode::OK)
+}
+
+async fn send_push_notification(token: &str, title: &str, body: &str) {
+    let client = reqwest::Client::new();
+    let payload = serde_json::json!({
+        "to": token,
+        "title": title,
+        "body": body,
+        "sound": "default",
+        "priority": "high"
+    });
+
+    client
+        .post("https://exp.host/--/api/v2/push/send")
+        .json(&payload)
+        .send()
+        .await
+        .ok();
 }
